@@ -1,0 +1,616 @@
+🚀 DOCKER – Complete DevOps Production Cheatsheet
+1️⃣ Core Docker Concepts (Interview Basics)
+🔹 What is Docker?
+
+Containerization platform that packages:
+
+Application
+
+Dependencies
+
+Runtime
+
+OS libraries
+Into a portable image.
+
+🔹 Key Components
+Component	Meaning
+Image	Blueprint
+Container	Running instance of image
+Dockerfile	Instructions to build image
+Docker Daemon	Background engine
+Docker Hub	Image registry
+Volume	Persistent storage
+Network	Container communication
+2️⃣ Base Image Strategy (Very Important for Interview)
+🐍 Python
+Use Case	Image
+Build stage	python:3.14-slim
+Production secure	gcr.io/distroless/python3-debian12
+Lightweight	python:3.14-alpine
+☕ Java
+Use Case	Image
+Build stage	maven:3.9-eclipse-temurin-21
+Runtime	eclipse-temurin:21-jre-jammy
+Ultra secure	gcr.io/distroless/java21-debian12
+🟢 Node.js
+Use Case	Image
+Build stage	node:20-alpine
+Production	node:20-slim
+Secure	gcr.io/distroless/nodejs20-debian12
+3️⃣ Production Multi-Stage Dockerfile (Python Example)
+# Build Stage
+FROM python:3.14-slim AS builder
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt --target=/app/deps
+
+COPY . .
+
+# Final Stage
+FROM gcr.io/distroless/python3-debian12
+WORKDIR /app
+
+COPY --from=builder /app/deps /app/deps
+COPY --from=builder /app .
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH="/app/deps"
+
+USER nonroot
+
+EXPOSE 8000
+CMD ["run.py"]
+4️⃣ Non-Root Best Practice
+Why?
+
+Security
+
+Prevent privilege escalation
+
+Required in Kubernetes
+
+Create user manually (if not distroless):
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+RUN chown -R appuser:appgroup /app
+USER appuser
+5️⃣ Docker Build Commands
+Basic
+docker build -t myapp .
+Custom Dockerfile
+docker build -f Dockerfile.prod -t myapp:prod .
+Enable BuildKit
+export DOCKER_BUILDKIT=1
+Multi-Arch (Production)
+docker buildx build --platform linux/amd64,linux/arm64 -t myapp:latest .
+6️⃣ Docker Run Commands
+Basic
+docker run -d -p 8000:8000 myapp
+With Environment Variables
+docker run -e ENV=prod myapp
+With Volume
+docker run -v $(pwd)/logs:/app/logs myapp
+Run as specific user
+docker run -u 1001 myapp
+7️⃣ Docker Debugging & Troubleshooting
+See running containers
+docker ps
+See all containers
+docker ps -a
+View logs
+docker logs <container_id>
+docker logs -f <container_id>
+Inspect container
+docker inspect <container_id>
+Check user running container
+docker inspect <container_id> | grep User
+Enter container shell
+docker exec -it <container_id> sh
+Override entrypoint
+docker run -it --entrypoint=sh myapp
+Check resource usage
+docker stats
+8️⃣ Production Logging Strategy
+Best Practice:
+
+Log to STDOUT
+
+Do NOT write logs to local file
+
+Use centralized logging (ELK, CloudWatch)
+
+View logs:
+docker logs mycontainer
+9️⃣ Docker Networking
+Create network
+docker network create mynet
+Run container in network
+docker run --network=mynet myapp
+Inspect network
+docker network inspect mynet
+🔟 Docker Volumes
+Create volume
+docker volume create myvolume
+Mount volume
+docker run -v myvolume:/data myapp
+Inspect volume
+docker volume inspect myvolume
+1️⃣1️⃣ Docker Compose (Production Setup)
+docker-compose.yml
+version: "3.9"
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=prod
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+Commands
+docker compose up -d
+docker compose down
+docker compose logs -f
+1️⃣2️⃣ Common Production Errors & Fixes
+❌ Permission Denied
+
+Cause: Running as non-root without chown
+Fix:
+
+RUN chown -R appuser:appgroup /app
+❌ Port Already Allocated
+Error: bind: address already in use
+
+Fix:
+
+sudo lsof -i :8000
+docker stop <container>
+❌ Module Not Found
+
+Cause: Wrong PYTHONPATH
+Fix:
+
+ENV PYTHONPATH="/app/deps"
+❌ COPY Requires Two Arguments
+
+Wrong:
+
+COPY /app
+
+Correct:
+
+COPY --from=builder /app .
+❌ Container Exits Immediately
+
+Check:
+
+docker logs <container>
+❌ Cannot Execute Binary
+
+Architecture mismatch.
+
+Check:
+
+docker inspect image | grep Architecture
+❌ Root User Security Warning (Kubernetes)
+
+Fix:
+
+USER nonroot
+1️⃣3️⃣ Production Optimization Checklist
+
+✅ Use Multi-stage
+✅ Use Slim or Distroless
+✅ Run as Non-root
+✅ Pin image versions
+✅ Expose only required ports
+✅ Use .dockerignore
+✅ Use HEALTHCHECK
+
+Example:
+
+HEALTHCHECK CMD curl --fail http://localhost:8000 || exit 1
+1️⃣4️⃣ .dockerignore (Very Important)
+.git
+__pycache__
+node_modules
+.env
+*.log
+
+Reduces build size.
+
+1️⃣5️⃣ Security Best Practices
+
+Use minimal base image
+
+Avoid root
+
+Scan image
+
+docker scan myapp
+
+Use read-only root filesystem
+
+docker run --read-only myapp
+1️⃣6️⃣ Production Deployment Pattern
+
+Local →
+Docker Build →
+Tag Version →
+Push to Registry →
+Deploy to ECS/Kubernetes
+
+docker tag myapp:latest myrepo/myapp:v1
+docker push myrepo/myapp:v1
+1️⃣7️⃣ Interview Questions You Must Know
+
+Difference between image & container
+
+What is multi-stage build?
+
+Why use distroless?
+
+What is BuildKit?
+
+What is non-root container?
+
+Difference between COPY & ADD?
+
+What is Docker layer caching?
+
+What is build context?
+
+Difference between CMD & ENTRYPOINT?
+
+How do you debug container crash?
+
+1️⃣8️⃣ CMD vs ENTRYPOINT (Very Important)
+
+| CMD | Default command |
+| ENTRYPOINT | Fixed executable |
+
+Example:
+
+ENTRYPOINT ["python"]
+CMD ["run.py"]
+1️⃣9️⃣ Real Production Debug Flow
+
+Container not starting?
+
+docker ps -a
+
+docker logs
+
+docker inspect
+
+docker exec
+
+Check ENV
+
+Check ports
+
+Check permissions
+
+🔥 Final Senior Advice
+
+In Interview say:
+
+I prefer multi-stage builds with minimal runtime image, run container as non-root, log to stdout, use versioned image tags instead of latest, enable BuildKit, and follow least privilege principle.
+
+That answer alone puts you above 80% candidates.
+
+You are now production-ready at strong intermediate DevOps Docker level.
+
+If you want next level:
+
+Kubernetes production checklist
+
+ECS production checklist
+
+CI/CD Docker pipeline template
+
+Real-world incident debugging scenarios
+
+Say 🚀
+
+i saw the sheet but i am not happywith tribleshoot exaples give me real world cases and explain error and slotution that type na as scratch menas how can i answer from your sheet bro
+second add ans for below question
+Difference between image & container
+
+What is multi-stage build?
+
+Why use distroless?
+
+What is BuildKit?
+
+What is non-root container?
+
+Difference between COPY & ADD?
+
+What is Docker layer caching?
+
+What is build context?
+
+Difference between CMD & ENTRYPOINT?
+
+How do you debug container crash?
+concider this line"Real-world incident debugging scenarios"
+
+Good. Now we talk like real production DevOps, not classroom Docker.
+
+I’ll give you:
+
+🔥 Real-world production incidents
+
+💣 Actual error messages
+
+🧠 Root cause thinking process
+
+✅ How to fix
+
+🎤 How to answer in interview
+
+Then I’ll answer your theory questions in interview-ready format.
+
+🚨 REAL-WORLD INCIDENT DEBUGGING SCENARIOS
+🧨 Incident 1: Container Keeps Restarting (CrashLoop)
+👀 Symptom
+docker ps
+STATUS: Restarting (1) 5 seconds ago
+
+Or in Kubernetes:
+
+CrashLoopBackOff
+🔍 First Step
+docker logs <container_id>
+
+You see:
+
+ModuleNotFoundError: No module named 'flask'
+🧠 Root Cause
+
+Dependencies not installed
+
+PYTHONPATH not set
+
+Multi-stage copy mistake
+
+✅ Fix
+
+If using multi-stage:
+
+ENV PYTHONPATH="/app/deps"
+
+OR fix COPY:
+
+COPY --from=builder /app/deps /app/deps
+🎤 Interview Answer
+
+First I check container logs. If dependencies missing, I verify multi-stage copy and environment variables. Most crashes are due to missing runtime dependencies.
+
+🧨 Incident 2: Works Locally, Fails in Production
+👀 Symptom
+
+Local:
+
+docker run -p 5000:5000 works
+
+Production:
+
+Connection refused
+🔍 Check
+docker inspect <container>
+
+You realize:
+
+App running on:
+
+127.0.0.1
+🧠 Root Cause
+
+App bound to localhost.
+
+In container, must bind to:
+
+0.0.0.0
+✅ Fix
+
+Flask:
+
+app.run(host="0.0.0.0", port=5000)
+🎤 Interview Answer
+
+Container networking requires binding to 0.0.0.0, not localhost. Otherwise external traffic cannot reach the container.
+
+🧨 Incident 3: Permission Denied After Switching to Non-Root
+👀 Error
+PermissionError: [Errno 13] Permission denied: '/app/logs'
+🧠 Root Cause
+
+Files owned by root
+Container runs as appuser
+
+✅ Fix
+RUN chown -R appuser:appgroup /app
+🎤 Interview Answer
+
+When switching to non-root, ownership must be updated using chown, otherwise runtime permission errors occur.
+
+🧨 Incident 4: Port Already in Use
+👀 Error
+bind: address already in use
+🔍 Check
+sudo lsof -i :8000
+docker ps
+🧠 Root Cause
+
+Another container using same port.
+
+✅ Fix
+
+Stop old container or change port mapping.
+
+docker stop <id>
+🧨 Incident 5: Image Too Large (1.5GB)
+👀 Symptom
+
+Push to registry very slow.
+
+🧠 Root Cause
+
+Using full python image
+
+Not using multi-stage
+
+No .dockerignore
+
+Installing build tools in runtime image
+
+✅ Fix
+
+Use python:slim
+
+Use multi-stage
+
+Use distroless
+
+Add .dockerignore
+
+🎤 Interview Answer
+
+I reduce image size by using multi-stage builds and minimal runtime images like distroless.
+
+🧨 Incident 6: Architecture Mismatch (Very Common Now)
+👀 Error
+exec format error
+🧠 Root Cause
+
+Built on Mac M1 (arm64)
+Running on AWS EC2 (amd64)
+
+✅ Fix
+docker buildx build --platform linux/amd64 -t myapp .
+🎤 Interview Answer
+
+This happens due to architecture mismatch. I solve it using multi-platform build with buildx.
+
+🧨 Incident 7: Container Exits Immediately
+👀 docker ps -a
+Exited (0) 2 seconds ago
+🧠 Root Cause
+
+CMD finished execution.
+
+Example:
+
+CMD ["echo", "hello"]
+
+Container stops after printing.
+
+✅ Fix
+
+Ensure long-running process.
+
+Web server must run in foreground.
+
+🎓 INTERVIEW QUESTIONS — PERFECT ANSWERS
+🔹 Difference between Image & Container
+
+Answer:
+
+An image is a read-only blueprint containing application code and dependencies. A container is a running instance of that image with its own writable layer.
+
+🔹 What is Multi-Stage Build?
+
+Multi-stage build allows using multiple FROM statements in one Dockerfile to separate build dependencies from runtime environment, reducing final image size and improving security.
+
+🔹 Why Use Distroless?
+
+Distroless images contain only runtime dependencies without shell or package manager, reducing attack surface and improving security in production.
+
+🔹 What is BuildKit?
+
+BuildKit is Docker’s next-generation build engine that improves caching, performance, parallel execution, and supports advanced features like multi-platform builds.
+
+🔹 What is Non-Root Container?
+
+A container that runs processes as a non-root Linux user, following least privilege principle to reduce security risks.
+
+🔹 Difference Between COPY & ADD?
+COPY	ADD
+Copies files	Copies + extracts tar + supports URL
+Recommended	Avoid unless needed
+
+Interview answer:
+
+I prefer COPY because it is predictable and secure.
+
+🔹 What is Docker Layer Caching?
+
+Docker caches each instruction as a layer. If instruction doesn’t change, Docker reuses cached layer, speeding up builds.
+
+🔹 What is Build Context?
+
+Build context is the directory sent to Docker daemon during build. Docker can only access files inside that context.
+
+🔹 Difference Between CMD & ENTRYPOINT?
+
+CMD provides default arguments, while ENTRYPOINT defines the main executable that always runs.
+
+🔹 How Do You Debug Container Crash?
+
+Interview-level answer:
+
+I follow systematic debugging:
+
+docker ps -a
+
+docker logs
+
+docker inspect
+
+docker exec
+
+Verify environment variables
+
+Check file permissions
+
+Validate port binding
+
+Check architecture mismatch
+
+🧠 Real Senior DevOps Thinking Pattern
+
+When production issue happens:
+
+Is container running?
+
+Is process inside running?
+
+Is port exposed?
+
+Is network reachable?
+
+Is dependency missing?
+
+Is permission correct?
+
+Is architecture correct?
+
+Is resource limit exceeded?
+
+🏆 If Interviewer Says:
+
+"Tell me a real production issue you handled"
+
+You answer:
+
+We had a production outage due to architecture mismatch after a developer built image on Apple M1. Containers failed with exec format error on EC2. I resolved it by implementing buildx multi-platform builds in CI/CD pipeline and enforcing amd64 builds for production.
+
+That answer = senior-level thinking.
