@@ -1,0 +1,414 @@
+🚀 Docker Two-Tier Flask App – DevOps Troubleshooting & Interview Guide
+
+This repository documents real troubleshooting scenarios, Docker best practices, and production debugging techniques for a Flask + MySQL two-tier application.
+
+This guide is written from a DevOps engineer perspective and includes:
+
+Docker fundamentals
+
+Dockerfile best practices
+
+Multi-stage builds
+
+Non-root containers
+
+Logging & debugging
+
+Real production issues
+
+Interview favorite questions
+
+📌 Application Architecture
+User
+  |
+  v
+Flask App Container
+  |
+  v
+MySQL Container
+
+Two containers communicate using a Docker network.
+
+📦 Project Structure
+two-tier-flask-app
+│
+├── app.py
+├── requirements.txt
+├── Dockerfile
+├── docker-compose.yml
+├── templates/
+├── message.sql
+🐳 Build Docker Image
+docker build -t two-tier-flask:v1 .
+🚀 Run MySQL Container
+docker run -d \
+--name mysql \
+--network flask-network \
+-e MYSQL_ROOT_PASSWORD=root \
+-e MYSQL_DATABASE=devops \
+mysql:8
+🚀 Run Flask Container
+docker run -d \
+-p 5000:5000 \
+--network flask-network \
+-e MYSQL_HOST=mysql \
+-e MYSQL_USER=root \
+-e MYSQL_PASSWORD=root \
+-e MYSQL_DB=devops \
+two-tier-flask:v1
+🔍 Troubleshooting Guide (Real Errors)
+❌ ERROR 1
+MySQL Connection Error
+MySQLdb.OperationalError:
+Can't connect to local server through socket
+'/run/mysqld/mysqld.sock'
+📌 Root Cause
+
+Application trying to connect to localhost MySQL socket instead of MySQL container.
+
+✅ Solution
+
+Use MySQL container name as host.
+
+MYSQL_HOST=mysql
+
+Correct run command:
+
+docker run -d \
+-p 5000:5000 \
+--network flask-network \
+-e MYSQL_HOST=mysql \
+-e MYSQL_USER=root \
+-e MYSQL_PASSWORD=root \
+-e MYSQL_DB=devops \
+two-tier-flask:v1
+❌ ERROR 2
+Unknown Database
+MySQLdb.OperationalError: (1049, "Unknown database 'devops'")
+📌 Root Cause
+
+Database not created in MySQL container.
+
+✅ Solution
+
+Create database manually.
+
+Enter container:
+
+docker exec -it mysql mysql -u root -p
+
+Create database:
+
+CREATE DATABASE devops;
+
+Verify:
+
+SHOW DATABASES;
+❌ ERROR 3
+Wrong environment variable syntax
+
+Incorrect command:
+
+-e MYSQL_HOST = mysql
+📌 Problem
+
+Spaces around = break environment variable parsing.
+
+✅ Correct
+-e MYSQL_HOST=mysql
+❌ ERROR 4
+MySQL command not working inside container
+
+You ran:
+
+SHOW DATABASES;
+
+inside bash shell.
+
+📌 Problem
+
+MySQL commands only work inside MySQL client.
+
+✅ Correct way
+
+Enter MySQL client:
+
+mysql -u root -p
+
+Then run:
+
+SHOW DATABASES;
+❌ ERROR 5
+Python Package Build Failure
+
+Error:
+
+pkg-config: not found
+ERROR: Failed to build mysqlclient
+📌 Root Cause
+
+System dependencies missing in base image.
+
+✅ Fix Dockerfile
+RUN apt-get update && apt-get install -y \
+pkg-config \
+default-libmysqlclient-dev \
+build-essential
+❌ ERROR 6
+Flask Error (Python 3.14)
+AttributeError: module 'pkgutil' has no attribute 'get_loader'
+📌 Root Cause
+
+Flask incompatible with Python 3.14.
+
+✅ Solution
+
+Use stable version:
+
+FROM python:3.9-slim
+🔍 Debugging Commands (DevOps Production)
+Check Running Containers
+docker ps
+Check Container Logs
+docker logs container_id
+
+Example:
+
+docker logs flask-app
+Debug inside container
+docker exec -it flask-app bash
+Check container network
+docker network inspect flask-network
+Test database connectivity
+docker exec -it flask-app ping mysql
+Connect MySQL container
+docker exec -it mysql mysql -u root -p
+Check tables
+USE devops;
+SHOW TABLES;
+Verify application data
+SELECT * FROM messages;
+🚨 Real-World Production Incident Scenarios
+Incident 1
+Container keeps restarting
+
+Check:
+
+docker ps -a
+
+Then logs:
+
+docker logs container_id
+
+Common reasons:
+
+Missing env variables
+
+DB connection failure
+
+Missing dependency
+
+Incident 2
+App works locally but not in container
+
+Debug:
+
+docker exec -it container bash
+
+Check installed packages:
+
+pip list
+Incident 3
+Port not accessible
+
+Check container port mapping:
+
+docker ps
+
+Example:
+
+0.0.0.0:5000->5000/tcp
+
+Test:
+
+curl localhost:5000
+Incident 4
+DB container running but app cannot connect
+
+Check network:
+
+docker network inspect flask-network
+
+Containers must be inside same network.
+
+🚨 Most Common Docker + MySQL Production Issues
+Issue	Cause	Fix
+App can't connect DB	Wrong host	Use container name
+DB connection refused	Network issue	Use docker network
+Unknown database	DB not created	Create manually
+Dependency build error	Missing OS libs	Install packages
+Container crash	App error	Check logs
+🎯 Interview Favorite Questions
+Difference between Image & Container
+Image	Container
+Blueprint	Running instance
+Read-only	Writable layer
+Used to create container	Executes application
+What is Multi-Stage Build?
+
+Multi-stage builds allow separating build environment and runtime environment.
+
+Example:
+
+FROM node:20 AS builder
+RUN npm install
+
+FROM node:20-alpine
+COPY --from=builder /app .
+
+Benefits:
+
+Smaller image
+
+Secure
+
+Faster deployments
+
+Why Use Distroless Images?
+
+Distroless images contain only runtime dependencies.
+
+Benefits:
+
+Smaller size
+
+No shell access
+
+Reduced attack surface
+
+Example:
+
+FROM gcr.io/distroless/python3
+What is BuildKit?
+
+BuildKit is modern Docker build engine.
+
+Benefits:
+
+Faster builds
+
+Parallel execution
+
+Better caching
+
+Enable:
+
+export DOCKER_BUILDKIT=1
+What is Non-Root Container?
+
+Running application as non-root user improves security.
+
+Example:
+
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+
+USER appuser
+
+Benefits:
+
+Prevent privilege escalation
+
+Safer production containers
+
+Difference between COPY & ADD
+COPY	ADD
+Basic file copy	Extra features
+Recommended	Less predictable
+No auto extract	Can extract archives
+
+Best practice:
+
+Always use COPY
+What is Docker Layer Caching?
+
+Docker caches each build step.
+
+Example:
+
+COPY package.json .
+RUN npm install
+
+If code changes but dependencies don't → Docker reuses cached layer.
+
+This makes builds much faster.
+
+What is Build Context?
+
+Build context = files sent to Docker daemon during build.
+
+Example:
+
+docker build .
+
+. = current directory is context.
+
+Docker can only access files inside context.
+
+CMD vs ENTRYPOINT
+CMD	ENTRYPOINT
+Default command	Fixed command
+Can override	Hard to override
+
+Example:
+
+CMD ["python","app.py"]
+How to Debug Container Crash
+
+Step-by-step DevOps workflow:
+
+1️⃣ Check container status
+
+docker ps -a
+
+2️⃣ Check logs
+
+docker logs container_id
+
+3️⃣ Enter container
+
+docker exec -it container bash
+
+4️⃣ Check environment variables
+
+env
+
+5️⃣ Test DB connectivity
+
+ping mysql
+⚠️ 3 Most Common Mistakes in Two-Tier Docker Projects
+
+1️⃣ Not using same Docker network
+2️⃣ Wrong environment variable syntax
+3️⃣ Database not initialized
+
+These are very common interview questions.
+
+🧠 DevOps Best Practices
+
+✔ Use multi-stage builds
+✔ Run containers as non-root user
+✔ Use distroless images for production
+✔ Use Docker networks for container communication
+✔ Always check logs first during incidents
+
+🎯 Final DevOps Advice
+
+When debugging container issues:
+
+1. docker ps
+2. docker logs
+3. docker exec
+4. docker network inspect
+5. check env variables
+
+These 5 commands solve 80% of Docker production incidents.
