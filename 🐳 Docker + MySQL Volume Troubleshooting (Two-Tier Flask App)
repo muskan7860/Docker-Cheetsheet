@@ -1,0 +1,661 @@
+
+
+This document explains a real troubleshooting scenario where a Flask application connected to MySQL inside Docker, but the database data appeared missing after container recreation.
+
+We will walk through:
+
+The problem
+
+Root cause
+
+Debugging steps
+
+Resolution
+
+Production lessons
+
+Secret DevOps debugging commands
+
+🧩 Architecture
+
+Application stack:
+
+Flask App Container
+        │
+        │ (Docker Network)
+        │
+MySQL Container
+        │
+        │ (Docker Volume)
+        │
+Persistent Data
+
+Volume mount:
+
+mysql_volume → /var/lib/mysql
+🚨 Problem Observed
+
+After restarting containers, the database appeared empty.
+
+Example error:
+
+ERROR 1146 (42S02): Table 'devops.messages' doesn't exist
+
+But when checking the Docker host filesystem:
+
+/var/lib/docker/volumes/mysql-data-v/_data/devops/messages.ibd
+
+The table files were present.
+
+🔎 Root Cause
+
+Multiple Docker volumes were created.
+
+Example:
+
+docker volume ls
+
+Output:
+
+mysql-data-v
+mysql_data
+
+Docker treated them as two completely different storage locations.
+
+Old container used
+mysql-data-v
+New container used
+mysql_data
+
+So MySQL started with a fresh empty database.
+
+Your data was still stored in the old volume.
+
+🔍 How We Discovered It
+
+Step 1 — Check volumes
+
+docker volume ls
+
+Output showed multiple volumes.
+
+Step 2 — Inspect container storage
+
+docker inspect mysql-new
+
+Important section:
+
+Mounts:
+Name: mysql_data
+Source: /var/lib/docker/volumes/mysql_data/_data
+Destination: /var/lib/mysql
+
+This confirmed MySQL was using the wrong volume.
+
+Step 3 — Check host filesystem
+
+sudo ls /var/lib/docker/volumes/mysql-data-v/_data/devops
+
+Output:
+
+messages.ibd
+
+This confirmed the real data existed in mysql-data-v.
+
+🛠 Final Fix
+
+We started MySQL using the correct volume.
+
+Command used:
+
+docker run -d \
+--name mysql-correct \
+--network flask-network \
+-v mysql-data-v:/var/lib/mysql \
+-e MYSQL_ROOT_PASSWORD=root \
+mysql:8
+
+Explanation:
+
+Flag	Meaning
+-d	Run container in background
+--name mysql-correct	Container name
+--network flask-network	Connect to application network
+-v mysql-data-v:/var/lib/mysql	Attach existing volume
+MYSQL_ROOT_PASSWORD	Set root password
+
+After starting the container with the correct volume:
+
+SHOW TABLES;
+
+Output:
+
+messages
+
+Data was successfully restored.
+
+🔐 Important DevOps Concept
+Containers are ephemeral
+
+When a container is deleted:
+
+docker rm container
+
+Everything inside the container filesystem is lost.
+
+But if data is stored in a Docker volume, it persists.
+
+Example:
+
+Container → deleted ❌
+Volume → still exists ✅
+🧠 Senior DevOps Debugging Workflow
+
+When database data appears missing:
+
+Step 1
+
+Check containers
+
+docker ps -a
+Step 2
+
+Check volumes
+
+docker volume ls
+Step 3
+
+Check container volume mapping
+
+docker inspect <container>
+
+Look for:
+
+Mounts
+Step 4
+
+Check actual data on host
+
+sudo ls /var/lib/docker/volumes/<volume>/_data
+Step 5
+
+Find database files
+
+sudo find /var/lib/docker/volumes -name "*.ibd"
+
+This reveals where MySQL tables exist.
+
+🧨 Real Production Incident Example
+
+A DevOps engineer restarted a production MySQL container.
+
+But they accidentally started it with a new volume.
+
+-v mysql-new:/var/lib/mysql
+
+Application started showing:
+
+Database empty
+
+Team panicked thinking data was lost.
+
+Actual issue:
+
+Old volume still existed:
+
+mysql-prod-data
+
+Solution:
+
+Restart container with correct volume.
+
+No data loss occurred.
+
+🧪 How to Properly Test Volume Persistence
+
+Step 1 — Insert data
+
+From Flask UI:
+
+Hello DevOps
+
+Step 2 — Check database
+
+SELECT * FROM messages;
+
+Step 3 — Remove container
+
+docker rm -f mysql
+
+Step 4 — Start new container with same volume
+
+docker run -d \
+--name mysql-new \
+-v mysql-data-v:/var/lib/mysql \
+-e MYSQL_ROOT_PASSWORD=root \
+mysql:8
+
+Step 5 — Verify data
+
+SELECT * FROM messages;
+
+Data should still exist.
+
+🔥 Secret DevOps Debug Commands
+
+These commands help during production incidents.
+
+Find all MySQL table files
+sudo find /var/lib/docker/volumes -name "*.ibd"
+Check which volume contains most data
+sudo du -sh /var/lib/docker/volumes/*
+
+Large volume usually contains real data.
+
+Show container mount points
+docker inspect container | grep Mounts -A 20
+Check running container filesystem
+docker exec -it mysql bash
+ls /var/lib/mysql
+Check database directly
+docker exec -it mysql mysql -u root -p
+🎯 Interview Question
+Q: Why use Docker volumes?
+
+Answer:
+
+Docker volumes are used to persist container data outside the container filesystem.
+
+Containers are ephemeral and can be removed anytime.
+Volumes ensure that application data such as databases, logs, and uploads remain safe even if containers are recreated.
+
+🎯 Interview Question
+Q: What happens if a container is removed without a volume?
+
+All data stored inside the container filesystem will be permanently lost.
+
+🎯 Interview Question
+Q: How do you troubleshoot missing database data in Docker?
+
+Answer:
+
+Check containers using docker ps
+
+Check volumes using docker volume ls
+
+Inspect container mounts using docker inspect
+
+Verify host filesystem storage
+
+Restart container with correct volume
+
+🚀 Key Lessons
+
+1️⃣ Always use named volumes for databases.
+
+2️⃣ Always verify container mount configuration.
+
+3️⃣ Never assume data is lost without checking volumes.
+
+4️⃣ Use docker inspect during debugging.
+
+5️⃣ Keep volume names consistent across deployments.
+
+⭐ Pro DevOps Tip
+
+Always document volume usage in docker-compose or Kubernetes persistent volumes.
+
+Example:
+
+volumes:
+  mysql-data:
+
+This prevents accidental volume mismatch.
+
+If you want, I can also show you something extremely useful for DevOps engineers:
+
+🔥 7 real Docker + MySQL production outages and exactly how senior engineers debug them (step-by-step).
+
+These are very famous interview scenarios at companies like Infosys, TCS, and Amazon DevOps roles.
+
+🔥 7 real Docker + MySQL production outages and exactly how senior engineers debug them (step-by-step)./
+These are very famous interview scenarios at companies like Infosys, TCS, and Amazon DevOps roles.
+
+Below are 7 real Docker + MySQL production incidents that DevOps engineers commonly face. I’ll explain them exactly how a Senior DevOps Engineer debugs them step-by-step. These scenarios are very common in interviews (especially for DevOps/SRE roles).
+
+I will structure each case like this:
+
+Incident
+Symptoms
+Root Cause
+Debugging Commands
+Solution
+Interview Answer
+🔥 1. MySQL Container Running but Application Cannot Connect
+Incident
+
+Flask / Node / Java application shows:
+
+Can't connect to MySQL server
+
+Example error:
+
+MySQLdb.OperationalError: (2002, "Can't connect to local server through socket")
+Symptoms
+
+Application container logs:
+
+Connection refused
+
+But MySQL container is running:
+
+docker ps
+
+Output:
+
+mysql-container Up
+Root Cause
+
+Application tried connecting to:
+
+localhost
+
+But in Docker containers communicate using container names, not localhost.
+
+Debugging
+
+Check network:
+
+docker network ls
+
+Check containers in network:
+
+docker network inspect flask-network
+
+Try ping from app container:
+
+docker exec -it flask-app ping mysql
+Fix
+
+Use container name as host.
+
+Example:
+
+MYSQL_HOST=mysql
+
+Run container:
+
+-e MYSQL_HOST=mysql
+Interview Answer
+
+Docker containers communicate via Docker DNS using container names.
+
+Using localhost inside container refers to the container itself, not another container.
+
+🔥 2. MySQL Data Lost After Container Restart
+Incident
+
+Database tables disappear after restarting container.
+
+Symptoms
+SHOW TABLES;
+Empty set
+Root Cause
+
+MySQL container started without volume.
+
+So data stored in container filesystem was lost.
+
+Debugging
+
+Check volumes:
+
+docker volume ls
+
+Inspect container:
+
+docker inspect mysql
+
+Check mount:
+
+/var/lib/mysql
+Fix
+
+Use volume:
+
+docker run -d \
+-v mysql-data:/var/lib/mysql \
+mysql:8
+Interview Answer
+
+Containers are ephemeral.
+Volumes are required for persistent storage.
+
+🔥 3. Application Works Locally but Fails in Docker
+Incident
+
+App runs locally but crashes in Docker.
+
+Error example:
+
+ModuleNotFoundError
+Root Cause
+
+Dependencies not installed.
+
+Example:
+
+requirements.txt missing
+
+or
+
+npm install not executed
+Debugging
+
+Enter container:
+
+docker exec -it container bash
+
+Check packages:
+
+Python
+
+pip list
+
+Node
+
+npm list
+Fix
+
+Ensure Dockerfile installs dependencies.
+
+Example:
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+🔥 4. Docker Build Suddenly Becomes Very Slow
+Incident
+
+Docker build taking 10+ minutes.
+
+Root Cause
+
+Layer caching broken.
+
+Example bad Dockerfile:
+
+COPY . .
+RUN npm install
+
+Every code change triggers dependency reinstall.
+
+Debugging
+
+Check Docker build output:
+
+Using cache
+
+If not showing cache → caching broken.
+
+Fix (Correct Layer Order)
+COPY package.json .
+RUN npm install
+
+COPY . .
+
+Now dependencies cached.
+
+Interview Answer
+
+Docker layer caching improves build speed by reusing unchanged layers.
+
+🔥 5. Container Crashes Immediately After Start
+Incident
+
+Container stops instantly.
+
+Symptoms
+Exited (1)
+
+Check:
+
+docker ps -a
+Debugging
+
+Check logs:
+
+docker logs container
+
+Example error:
+
+python: can't open file app.py
+Root Cause
+
+Wrong working directory.
+
+Fix
+
+Set WORKDIR correctly.
+
+WORKDIR /app
+COPY . .
+CMD ["python","app.py"]
+🔥 6. MySQL Container Uses Too Much Disk
+Incident
+
+Server disk full.
+
+Symptoms
+No space left on device
+Debugging
+
+Check Docker disk usage:
+
+docker system df
+
+Check volumes:
+
+sudo du -sh /var/lib/docker/volumes/*
+Root Cause
+
+Old unused volumes.
+
+Fix
+
+Remove unused volumes:
+
+docker volume prune
+
+⚠️ Production caution
+
+Never run blindly.
+
+Check volume first.
+
+🔥 7. MySQL Container Starts but Database Not Created
+Incident
+
+Application logs:
+
+Unknown database 'devops'
+Root Cause
+
+Environment variable missing.
+
+Example missing:
+
+MYSQL_DATABASE
+Debugging
+
+Check container env variables:
+
+docker inspect mysql
+
+Look for:
+
+Env
+Fix
+
+Run container correctly:
+
+docker run -d \
+-e MYSQL_ROOT_PASSWORD=root \
+-e MYSQL_DATABASE=devops \
+mysql:8
+🚀 Advanced DevOps Debugging Commands
+
+These are real commands senior engineers use.
+
+Check container resource usage
+docker stats
+Check container processes
+docker top container
+Inspect network connectivity
+docker exec -it container netstat -tulpn
+Check container filesystem
+docker exec -it container ls -la
+Find container logs location
+docker inspect container | grep LogPath
+Check Docker daemon logs
+
+Linux:
+
+journalctl -u docker
+⭐ Bonus: Interview Favorite Question
+Q: How do you debug container crash?
+
+Answer:
+
+Check container status
+
+docker ps -a
+
+Check logs
+
+docker logs container
+
+Enter container
+
+docker exec -it container bash
+
+Verify files
+
+ls
+
+Verify network connectivity
+
+ping
+
+Inspect container configuration
+
+docker inspect
+🧠 Senior DevOps Tip
+
+Always remember this production debugging order:
+
+1 Check container status
+2 Check logs
+3 Check environment variables
+4 Check volumes
+5 Check network
+6 Check application configuration
